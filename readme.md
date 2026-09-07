@@ -1,4 +1,4 @@
-# Regularization Explorer
+# Regularization Explorer: MINI PROJECT LAB 4
 
 Streamlit app for the Lab 4 Home Assignment (Neural Networks Lab, CCET).
 Lets you configure the same 784 → 256 → 10 FashionMNIST network from the
