@@ -1,0 +1,158 @@
+FORMULAS USED — REGULARIZATION EXPLORER
+========================================
+Reference sheet for each approach implemented in app.py.
+Notation: L = base loss (cross-entropy), w = a weight, p = drop
+probability, x = pre-activation / input value, gamma/beta = learned
+BatchNorm parameters, epsilon = small constant for numerical stability.
+
+BUILT-IN vs MANUAL — QUICK SUMMARY
+------------------------------------
+| Technique      | Built-in PyTorch function?  | Or written by hand?          |
+|----------------|------------------------------|-------------------------------|
+| L2 (weight decay) | YES - optimizer argument   | -                              |
+| L1             | NO                           | Manual, inside train_model()  |
+| Dropout        | YES - nn.Dropout(p)         | -                              |
+| DropConnect    | NO                           | Manual, custom DropConnectLinear class |
+| BatchNorm      | YES - nn.BatchNorm1d(n)     | -                              |
+| Cross-entropy  | YES - nn.CrossEntropyLoss() | -                              |
+| Early stopping | NO                           | Manual, patience loop in train_model() |
+
+
+1. GENERALIZATION GAP (used to judge every run)
+------------------------------------------------
+    gap = train_accuracy - test_accuracy
+
+A large gap => overfitting (memorizing training data).
+A small gap with LOW accuracy on both sides => underfitting.
+
+
+2. L2 REGULARIZATION (WEIGHT DECAY)
+------------------------------------
+BUILT-IN: yes — pass weight_decay to the optimizer, PyTorch does the
+rest internally. No formula needs to be written by hand:
+
+    torch.optim.Adam(model.parameters(), lr=lr, weight_decay=lambda_l2)
+
+What it does under the hood (formula, for reference only — you never
+write this yourself):
+
+    Loss_total = Loss_CE + (lambda / 2) * sum(w^2)  for all weights w
+
+Effect on the gradient update (per weight):
+
+    w := w - lr * (dL/dw + lambda * w)
+
+Small lambda -> negligible effect. Large lambda -> weights pulled toward
+zero so hard the network underfits.
+
+
+3. L1 REGULARIZATION
+----------------------
+BUILT-IN: no. PyTorch has no weight_decay-style argument for L1 —
+it must be added to the loss by hand every training step:
+
+    l1_norm = sum(p.abs().sum() for p in model.parameters())
+    loss = criterion(out, y) + l1_lambda * l1_norm
+
+Formula this implements:
+
+    Loss_total = Loss_CE + lambda * sum(|w|)  for all weights w
+
+Unlike L2, the penalty on each weight is constant in magnitude
+(derivative is +-1, not proportional to w), which is why L1 pushes many
+weights to EXACTLY zero rather than just shrinking them -> sparsity.
+This is what the "near-zero weight fraction" in the results table
+measures.
+
+
+4. DROPOUT (nn.Dropout, INVERTED DROPOUT)
+--------------------------------------------
+BUILT-IN: yes — nn.Dropout(p) handles masking, the 1/(1-p) rescaling
+during training, AND switching itself off automatically in eval mode.
+Used in the model as:
+
+    self.dropout = nn.Dropout(dropout_p)
+    x = self.dropout(x)
+
+Formula PyTorch runs internally (for reference only):
+
+    mask ~ Bernoulli(1 - p)      (mask = 1 with probability 1-p, else 0)
+
+    x_dropped = (x * mask) / (1 - p)
+
+The division by (1 - p) is the "inversion" step: it rescales the
+surviving activations so the expected total signal reaching the next
+layer stays the same as at test time. Because of this, at test time:
+
+    x_test = x                    (no scaling needed, PyTorch does this automatically)
+
+Worked example from the lab (a = [1.2, 0.5, 2.0, 1.0], p = 0.25,
+mask = [1, 1, 0, 1]):
+
+    1.2 / 0.75 = 1.6000
+    0.5 / 0.75 = 0.6667
+    2.0 * 0    = 0.0000   (dropped)
+    1.0 / 0.75 = 1.3333
+
+
+5. DROPCONNECT (custom DropConnectLinear layer)
+--------------------------------------------------
+Dropout masks NEURONS (the activation vector). DropConnect masks
+individual WEIGHTS (the connections) instead:
+
+    mask ~ Bernoulli(1 - p), same shape as the weight matrix W
+
+    W_dropped = (W * mask) / (1 - p)
+
+    output = x @ W_dropped^T + b
+
+Mask shape for a 784->256 layer:
+    Dropout mask:      256 numbers (one per neuron)
+    DropConnect mask:  256 x 784 = 200,704 numbers (one per weight)
+
+Worked example from the lab (x = [2, 1, 3], W = [0.5, 0.2, -0.4],
+mask = [1, 0, 1]):
+
+    0.5 * 2 = 1.0   (kept)
+    0.2 * 1 -> masked to 0   (connection cut, neuron still alive)
+   -0.4 * 3 = -1.2  (kept)
+    sum = 1.0 + 0 - 1.2 = -0.2
+
+
+6. BATCH NORMALIZATION (nn.BatchNorm1d)
+-------------------------------------------
+For each batch, per feature:
+
+    mean  = (1/N) * sum(x_i)                       for i = 1..N in batch
+
+    var   = (1/N) * sum((x_i - mean)^2)
+
+    x_hat = (x_i - mean) / sqrt(var + epsilon)      (normalize)
+
+    y_i   = gamma * x_hat + beta                    (learnable scale/shift)
+
+gamma and beta are learned so the network can undo the normalization
+entirely if that turns out to be optimal (gamma = original std dev,
+beta = original mean recovers the original values exactly).
+
+Worked example from the lab (batch = [2, 4, 6, 8], gamma = 2, beta = 1):
+
+    mean     = (2+4+6+8)/4        = 5.0000
+    variance = mean((x-5)^2)      = 5.0000
+    std      = sqrt(5)            = 2.2361
+    x_hat    = (x-5)/2.2361       = [-1.3416, -0.4472, 0.4472, 1.3416]
+    y        = 2*x_hat + 1        = [-1.6833, 0.1056, 1.8944, 3.6833]
+
+At test time, BatchNorm uses the RUNNING AVERAGES of mean/var
+accumulated during training (not the current batch's stats), which is
+why model.eval() matters — a batch of size 1 has no variance to compute,
+which is also why BatchNorm fails on single-image inference in train mode.
+
+
+7. LOSS FUNCTION (all runs)
+------------------------------
+Cross-entropy loss for a C-class classification problem:
+
+    Loss_CE = -sum( y_true_c * log(softmax(logits)_c) )   for c = 1..C
+
+L1/L2 terms (sections 2-3 above) are added on top of this when enabled.
