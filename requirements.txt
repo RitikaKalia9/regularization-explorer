@@ -1,7 +1,8 @@
    --extra-index-url https://download.pytorch.org/whl/cpu
-   streamlit
+   streamlit>=1.50
    torch
    torchvision
    numpy
    pandas
    matplotlib
+   plotly
