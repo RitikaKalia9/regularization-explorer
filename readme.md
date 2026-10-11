@@ -1,9 +1,70 @@
-# Regularization Explorer: MINI PROJECT LAB 4
+# Regularization Explorer
 
-Streamlit app for the Lab 4 Home Assignment (Neural Networks Lab, CCET).
-Lets you configure the same 784 → 256 → 10 FashionMNIST network from the
-lab with any combination of L2, L1, Dropout, DropConnect and BatchNorm,
-train it, and compare runs.
+
+An interactive Streamlit app that shows how regularization fights
+**overfitting**. Pick a dataset (or upload your own CSV), train a small
+neural network with any mix of L2, L1, Dropout, DropConnect, BatchNorm and
+early stopping, and see — with annotated charts — what each setting does to
+the gap between training and test accuracy.
+
+> **Overfitting** = the model scores well on data it has seen but poorly on
+> data it hasn't. **Regularization** = techniques that stop the model from
+> memorising the training data.
+
+---
+
+## Features
+
+### Data
+- **Dataset dropdown:** FashionMNIST, MNIST, CIFAR-10 (downloaded
+  automatically into `./data` on first use).
+- **Upload your own CSV:** choose the target column and the share of rows held
+  out for testing.
+  - Numeric columns are standardised (using training rows only, so there is no
+    leakage from the test set).
+  - Text columns are one-hot encoded; text columns with more than 30 distinct
+    values (e.g. IDs, names) are skipped with a note.
+  - The target must have at most 20 distinct classes (classification only).
+    Missing feature values are filled with the column median.
+  - Files above 50,000 rows are randomly down-sampled.
+- **Training-set size** (image datasets): 500 / 2,000 / 10,000 — fewer
+  examples means more overfitting.
+
+### Regularization and training controls
+| Control | What it does | What to expect |
+|---|---|---|
+| L2 weight decay | Penalises large weights | Smaller weights, smaller gap |
+| L1 lambda | Pushes many weights to exactly 0 | Spike at 0 in the weight chart |
+| Dropout | Randomly switches off neurons during training | Lower train accuracy, smaller gap |
+| DropConnect | Randomly switches off individual weights | Like Dropout, finer-grained |
+| BatchNorm | Normalises each layer's outputs | Faster training; not always less overfitting |
+| Early stopping | Stops when test loss stops improving (patience 3) | Avoids the late-epoch rise in test loss |
+| Learning rate, epochs | Standard training settings | — |
+
+The network is one hidden layer of 256 units (`inputs → 256 → classes`), sized
+automatically for the chosen dataset (e.g. 784 → 256 → 10 for FashionMNIST).
+
+### Charts and results
+- **Metrics + verdict:** train accuracy, test accuracy and the generalization
+  gap, with a coloured verdict (overfitting / underfitting / generalizing
+  well).
+- **Loss chart:** train (blue) vs test (orange), gap shaded, green star at the
+  best epoch (where early stopping would stop).
+- **Accuracy chart:** the same view in plain percentages.
+- **Weights chart:** log-scale histogram plus "% of weights ≈ 0", which makes
+  the effect of L1 and L2 visible.
+- **Sample predictions** (image datasets): 12 test images, green = correct,
+  red = wrong.
+- **Compare all runs:** train-vs-test bar chart for every run, an overlay of
+  every run's test loss, and a results table with the best run highlighted.
+  A "Clear all runs" button resets the session.
+- Plain-English captions under each chart and a "New here?" guide in the app.
+
+### Reproducibility
+The random seed is reset before every model is built (`set_seed()`), as in
+the lab code, so runs are directly comparable.
+
+---
 
 ## Setup
 
@@ -12,26 +73,36 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-First run downloads FashionMNIST into `./data` (a few seconds).
+Requires Python 3.9+. `requirements.txt` points to the CPU-only PyTorch
+wheels, which keeps the install small. On a machine with a GPU the app uses it
+automatically.
 
-## What's implemented
+## How to use
 
-**Required (from the spec):**
-- Sidebar controls: L2 weight decay, L1 lambda, dropout rate, BatchNorm
-  checkbox, learning rate, epochs.
-- "Train" button → trains the model, plots train/test loss curves.
-- Results table that keeps every run of the session (settings + final
-  train acc, test acc, gap).
-- Current run's gap shown as a metric; best run highlighted in the table.
-- One-line plain-English verdict (overfitting / underfitting / fine).
+1. Choose a **dataset** in the sidebar (or upload a CSV and pick the target
+   column).
+2. Press **Train** with all regularization off to get a baseline.
+3. Switch on one technique at a time, press **Train** again, and compare.
+4. Read the **gap** (train − test accuracy). A large gap means overfitting;
+   low train accuracy means underfitting.
+5. Use the **Compare all runs** section to see which setting shrinks the gap
+   without hurting test accuracy.
 
-**Extra credit (all included):**
-- DropConnect layer from Part D, selectable via a slider.
-- Weight histogram — shows the spike at 0 that L1 produces.
-- Early-stopping checkbox (patience = 3 epochs, watches test loss).
-- Training set size selector (500 / 2,000 / 10,000).
+Tip: small datasets (a few hundred rows) overfit easily and make the best
+demos.
 
-## Results
+## Deploying (Streamlit Community Cloud)
+
+1. Push `app.py`, `requirements.txt` and this readme to a GitHub repo (do not
+   commit `data/`).
+2. On share.streamlit.io choose **Create app**, select the repo, branch and
+   `app.py`, then **Deploy**.
+3. The free tier is CPU-only with limited RAM, so use the smaller training
+   sizes and fewer epochs when demoing.
+
+---
+
+## Example results (FashionMNIST, from the lab)
 
 All runs used `train_size = 2000`, `lr = 0.001`, `epochs = 20` unless noted.
 
@@ -51,33 +122,32 @@ All runs used `train_size = 2000`, `lr = 0.001`, `epochs = 20` unless noted.
 | Part F: Dropout 0.5 + L1 0.001 | 0.771 | 0.760 | 0.011 | Generalizing well |
 | Part F: Dropout 0.5 + L1 0.001 + BatchNorm | 0.818 | 0.764 | 0.054 | Generalizing well |
 
-**Headline finding:** Dropout p = 0.5 on its own was the best-performing
-single configuration across every run. Combining it with L1 (Part F) did
-not beat it — both combined models scored lower test accuracy (0.760 and
-0.764 vs 0.820) — confirming the lab's own warning that stacking
-regularization techniques isn't automatically better than the single best
-one. Full analysis, hand calculations (Table 2), and conclusions
-(Table 3) are in `Regularization_Explorer_Report.docx`.
+**Headline finding:** Dropout p = 0.5 on its own was the best single
+configuration. Combining it with L1 (Part F) did not beat it (0.760 and 0.764
+vs 0.820 test accuracy) — stacking regularization techniques is not
+automatically better than the single best one.
 
-## Notes for your report / record sheet
+Caveats: the weight_decay = 0.5, DropConnect and early-stopping runs also had
+BatchNorm switched on, so they are not a clean single-variable change from the
+baseline. Turning on Dropout and DropConnect together triggers a warning,
+because the lab compares them one at a time (Part D.4).
 
-- The seed is reset before every model build (`set_seed()`), same as the
-  lab code, so runs are comparable.
-- The `weight_decay = 0.5`, DropConnect, and early-stopping runs above
-  also had BatchNorm switched on, so they aren't a clean single-variable
-  change from baseline — see the report for the full caveat.
-- If you turn on both Dropout and DropConnect at once the app warns you —
-  the lab asks you to compare them one at a time (Part D.4), not combine
-  them.
-- Near-zero weight fraction is logged per run in the results table, which
-  is what you need for the L1 task in Part B.4.
+---
 
-## Status
+## Project files
 
-- [x] App (all required + extra-credit features)
-- [x] Screenshots (13, one per run above)
-- [x] Report (`Regularization_Explorer_Report.docx`) — results, analysis,
-      Table 1/2/3, Part F, all screenshots embedded
-- [ ] Reread Table 3 in the report and adjust it to sound like your own
-      conclusions before submitting
-- [ ] Add your roll number to the report header
+| File | Purpose |
+|---|---|
+| `app.py` | The Streamlit app (data loading, model, training, charts) |
+| `requirements.txt` | Python dependencies (CPU-only PyTorch index) |
+| `formulas.txt` | Formulas used in the lab |
+| `readme.md` | This file |
+
+## Limitations
+
+- Classification only (CSV targets must have ≤ 20 classes); no regression.
+- One fixed architecture: a single hidden layer of 256 units.
+- The "test" split is also used for early stopping and for the per-epoch
+  curves, as in the lab. For a strict evaluation, hold out a third split.
+- Results are from a single seed; differences of a point or less between runs
+  may be noise.
