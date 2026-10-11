@@ -1,6 +1,7 @@
-streamlit
-torch
-torchvision
-numpy
-pandas
-matplotlib
+   --extra-index-url https://download.pytorch.org/whl/cpu
+   streamlit
+   torch
+   torchvision
+   numpy
+   pandas
+   matplotlib
